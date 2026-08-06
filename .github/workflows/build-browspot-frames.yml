@@ -1,0 +1,82 @@
+name: Build BrowSpot Canvas Frames
+
+on:
+  push:
+    paths:
+      - ".github/workflows/build-browspot-frames.yml"
+      - "assets/browspot/rebuild.txt"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-frames:
+    runs-on: ubuntu-latest
+    env:
+      VIDEO_URL: "https://id-preview--efb2665a-6e44-48b8-ace6-5dc0f8d9ab67.lovable.app/__l5e/assets-v1/160ba09c-2d33-438e-8588-b2451ae7c0bf/browspot-scrub-web-hq-1080p.mp4"
+      OUTPUT_DIR: "assets/browspot/v1.5"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install ffmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Download source video
+        run: |
+          curl --fail --location --retry 5 --retry-delay 3 "$VIDEO_URL" -o /tmp/browspot-source.mp4
+          ffprobe -v error -select_streams v:0 -show_entries stream=width,height,avg_frame_rate,duration -of json /tmp/browspot-source.mp4
+
+      - name: Extract optimized WebP sequence
+        run: |
+          rm -rf /tmp/browspot-frames
+          mkdir -p /tmp/browspot-frames
+          ffmpeg -hide_banner -loglevel error \
+            -i /tmp/browspot-source.mp4 \
+            -vf "fps=15,scale=1600:900:flags=lanczos" \
+            -c:v libwebp -quality 78 -compression_level 6 -preset picture -lossless 0 \
+            -an /tmp/browspot-frames/frame_%03d.webp
+          test "$(find /tmp/browspot-frames -name 'frame_*.webp' | wc -l)" -eq 166
+
+      - name: Pack frames into one cacheable JSON asset
+        run: |
+          mkdir -p "$OUTPUT_DIR"
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64, json, os
+
+          source = Path('/tmp/browspot-frames')
+          frames = []
+          for index in range(1, 167):
+              frame = source / f'frame_{index:03d}.webp'
+              if not frame.exists():
+                  raise SystemExit(f'Missing {frame}')
+              frames.append(base64.b64encode(frame.read_bytes()).decode('ascii'))
+
+          payload = {
+              'version': '1.5',
+              'frameCount': 166,
+              'width': 1600,
+              'height': 900,
+              'mimeType': 'image/webp',
+              'frames': frames,
+          }
+          output = Path(os.environ['OUTPUT_DIR']) / 'frames.json'
+          output.write_text(json.dumps(payload, separators=(',', ':')), encoding='utf-8')
+          print(f'Wrote {output} ({output.stat().st_size} bytes)')
+          PY
+
+      - name: Commit generated asset
+        run: |
+          git config user.name "osx01 asset bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add "$OUTPUT_DIR/frames.json"
+          if git diff --cached --quiet; then
+            echo "No asset changes"
+          else
+            git commit -m "Add BrowSpot canvas frames v1.5 [skip ci]"
+            git push
+          fi

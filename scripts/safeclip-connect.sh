@@ -33,7 +33,7 @@ LOGIN="$(gh api user --jq .login)"
 
 if ! gh repo view "$REPO" >/dev/null 2>&1; then
   echo "Creating independent private repository $REPO ..."
-  gh repo create "$REPO" --private --description 'OSX01 SafeClip one-time encrypted secret sharing'
+  gh repo create "$REPO" --private --add-readme --description 'OSX01 SafeClip one-time encrypted secret sharing'
 fi
 PRIV="$(gh api "repos/$REPO" --jq .private)"
 [[ "$PRIV" == true ]] || fail "Repository $REPO must be PRIVATE, refusing to store deploy credentials."

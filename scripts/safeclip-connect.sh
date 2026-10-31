@@ -99,6 +99,13 @@ rm -f "$TEMP"
 echo 'Restricted deployment access installed. Database and other services untouched.'
 REMOTE
 
+# Prove that the restricted identity actually works before storing GitHub secrets.
+echo 'Testing restricted SSH login and SafeClip-only restart permission...'
+ssh -i "$KEY" -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes \
+  "$DEPLOY_USER@$HOST" \
+  'test -w /opt/safeclip/server.py && test -w /opt/safeclip/public && sudo -n -l | grep -q "restart safeclip"' || \
+  fail 'Restricted deploy account test failed; refusing to report success.'
+
 # Read host public key THROUGH the existing authenticated root SSH channel.
 HOST_PUB="$(ssh -o StrictHostKeyChecking=yes "root@$HOST" 'head -n 1 /etc/ssh/ssh_host_ed25519_key.pub')"
 [[ "$HOST_PUB" == ssh-ed25519\ * ]] || fail 'Could not confirm SSH host key.'
